@@ -7,13 +7,15 @@
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <title>Gramin Kart</title>
 
-    <!-- React Router fix for Hostinger -->
+    <!-- Restore path after 404 redirect -->
     <script>
-      const redirectPath = sessionStorage.getItem('redirectPath');
-      if (redirectPath) {
-        sessionStorage.removeItem('redirectPath');
-        window.history.replaceState(null, '', redirectPath);
-      }
+      (function() {
+        var redirectPath = sessionStorage.getItem('redirectPath');
+        if (redirectPath && redirectPath !== '/') {
+          sessionStorage.removeItem('redirectPath');
+          window.history.replaceState(null, '', redirectPath);
+        }
+      })();
     </script>
 
   </head>
