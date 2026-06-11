@@ -159,28 +159,27 @@ export default function ProductDetails() {
   const [toast,       setToast]       = useState(null);
 
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
-const [related, setRelated] = useState([]);
+  const [related, setRelated] = useState([]);
 
-// Add this effect after the loadProduct effect:
-useEffect(() => {
-  if (!product) return;
-  const catId = typeof product.category === "object" ? product.category?.id : product.category;
-  if (!catId) return;
+  useEffect(() => {
+    if (!product) return;
+    const catId = typeof product.category === "object" ? product.category?.id : product.category;
+    if (!catId) return;
 
-  fetch(`${API_URL}/api/Products/allFree?limit=100`)
-    .then(r => r.json())
-    .then(data => {
-      const list = Array.isArray(data) ? data : data.products || data.data || [];
-      const filtered = list
-        .filter(p => {
-          const pCat = typeof p.category === "object" ? p.category?.id : p.category;
-          return pCat === catId && p.id !== product.id;
-        })
-        .slice(0, 8);
-      setRelated(filtered);
-    })
-    .catch(() => {});
-}, [product]);
+    fetch(`${API_URL}/api/Products/allFree?limit=100`)
+      .then(r => r.json())
+      .then(data => {
+        const list = Array.isArray(data) ? data : data.products || data.data || [];
+        const filtered = list
+          .filter(p => {
+            const pCat = typeof p.category === "object" ? p.category?.id : p.category;
+            return pCat === catId && p.id !== product.id;
+          })
+          .slice(0, 8);
+        setRelated(filtered);
+      })
+      .catch(() => {});
+  }, [product]);
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768);
@@ -193,7 +192,6 @@ useEffect(() => {
     setLoading(true);
     setError(null);
     try {
-      // Fetch all free products and find by slug (no auth endpoint for slug lookup)
       const res  = await fetch(`${API_URL}/api/Products/allFree?limit=500`);
       const data = await res.json();
       const list = Array.isArray(data) ? data : data.products || data.data || [];
@@ -251,8 +249,8 @@ useEffect(() => {
 
   // ── Derived values ────────────────────────────────────────────────────────
   const allImages  = [product.thumbnail, ...(product.additionalImages || [])].filter(Boolean);
-  const oldPrice     = Number(product.buyingPrice  ?? 0);
-  const price   = Number(product.sellingPrice ?? null);
+  const oldPrice   = Number(product.buyingPrice  ?? 0);
+  const price      = Number(product.sellingPrice ?? null);
   const discount   = oldPrice && oldPrice > price ? Math.round((1 - price / oldPrice) * 100) : null;
   const stock      = product.stockQuantity ?? 0;
   const isOOS      = stock === 0;
@@ -280,18 +278,11 @@ useEffect(() => {
     }
   };
 
-  const handleBuyNow = async () => {
+  // ── Buy Now: cart bypass — navigate directly with URL params ──────────────
+  const handleBuyNow = () => {
     if (!isLoggedIn()) { navigate("/user/login"); return; }
     if (isOOS) return;
-    setCartLoading(true);
-    try {
-      await addToCart(product.id, qty);
-      window.dispatchEvent(new CustomEvent("cart-item-added"));
-      navigate("/user/checkout");
-    } catch {
-      showToast("Failed — please try again", "error");
-      setCartLoading(false);
-    }
+    navigate(`/user/checkout?buyNow=${product.id}&qty=${qty}`);
   };
 
   const handleWishlist = async () => {
@@ -528,14 +519,13 @@ useEffect(() => {
                 </p>
               )}
 
-              {/* Rating (display only — no review form) */}
+              {/* Rating */}
               {(product.averageRating || product.reviewCount) && (
                 <div style={{ marginBottom: 12 }}>
                   <StarRating rating={product.averageRating || 0} count={product.reviewCount || 0} />
                 </div>
               )}
 
-              {/* Divider */}
               <div style={{ borderTop: "1px dashed #f0f0f0", margin: "12px 0" }} />
 
               {/* Price */}
@@ -609,7 +599,6 @@ useEffect(() => {
                 )}
               </div>
 
-              {/* Divider */}
               <div style={{ borderTop: "1px dashed #f0f0f0", margin: "14px 0" }} />
 
               {/* Quantity Selector */}
@@ -676,7 +665,7 @@ useEffect(() => {
                   {cartLoading ? "Adding…" : "Add to Cart"}
                 </button>
                 <button className="pd-btn-buy" onClick={handleBuyNow}
-                  disabled={isOOS || cartLoading}>
+                  disabled={isOOS}>
                   {isOOS ? "Unavailable" : "Buy Now"}
                 </button>
               </div>
@@ -718,151 +707,141 @@ useEffect(() => {
             )}
 
             {/* ── Related Products ── */}
-{related.length > 0 && (
-  <div style={{ marginTop: 8 }}>
-    <h2 style={{
-      margin: "0 0 16px", fontSize: isMobile ? 17 : 20,
-      fontWeight: 900, color: "#1a2332",
-      display: "flex", alignItems: "center", gap: 8,
-    }}>
-      Related Products
-    </h2>
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: isMobile
-        ? "repeat(2, 1fr)"
-        : "repeat(4, 1fr)",
-      gap: isMobile ? 10 : 14,
-    }}>
-      {related.map((rel) => {
-        const rPrice    = Number(rel.buyingPrice  ?? 0);
-        const rOld      = Number(rel.sellingPrice ?? null);
-        const rDiscount = rOld && rOld > rPrice ? Math.round((1 - rPrice / rOld) * 100) : null;
-        const rImg      = rel.thumbnail || rel.additionalImages?.[0];
-        const rCat      = typeof rel.category === "object" ? rel.category?.name : rel.category || "";
+            {related.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <h2 style={{
+                  margin: "0 0 16px", fontSize: isMobile ? 17 : 20,
+                  fontWeight: 900, color: "#1a2332",
+                  display: "flex", alignItems: "center", gap: 8,
+                }}>
+                  Related Products
+                </h2>
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)",
+                  gap: isMobile ? 10 : 14,
+                }}>
+                  {related.map((rel) => {
+                    const rPrice    = Number(rel.buyingPrice  ?? 0);
+                    const rOld      = Number(rel.sellingPrice ?? null);
+                    const rDiscount = rOld && rOld > rPrice ? Math.round((1 - rPrice / rOld) * 100) : null;
+                    const rImg      = rel.thumbnail || rel.additionalImages?.[0];
+                    const rCat      = typeof rel.category === "object" ? rel.category?.name : rel.category || "";
 
-        return (
-          <div
-            key={rel.id}
-            onClick={() => {
-              navigate(`/products/${rel.slug}`);
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-            style={{
-              background: "#fff", borderRadius: 14, overflow: "hidden",
-              border: "1px solid #e8f5e9", boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
-              cursor: "pointer", transition: "box-shadow 0.2s, transform 0.2s",
-              display: "flex", flexDirection: "column", position: "relative",
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.boxShadow = "0 8px 24px rgba(22,163,74,0.13)";
-              e.currentTarget.style.transform = "translateY(-2px)";
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,0.05)";
-              e.currentTarget.style.transform = "translateY(0)";
-            }}
-          >
-            {/* Discount badge */}
-            {rDiscount && (
-              <div style={{
-                position: "absolute", top: 8, left: 8, zIndex: 2,
-                background: "#ef4444", color: "#fff", fontSize: 10,
-                fontWeight: 800, padding: "2px 7px", borderRadius: 5,
-              }}>
-                {rDiscount}% OFF
+                    return (
+                      <div
+                        key={rel.id}
+                        onClick={() => {
+                          navigate(`/products/${rel.slug}`);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        style={{
+                          background: "#fff", borderRadius: 14, overflow: "hidden",
+                          border: "1px solid #e8f5e9", boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
+                          cursor: "pointer", transition: "box-shadow 0.2s, transform 0.2s",
+                          display: "flex", flexDirection: "column", position: "relative",
+                        }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.boxShadow = "0 8px 24px rgba(22,163,74,0.13)";
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,0.05)";
+                          e.currentTarget.style.transform = "translateY(0)";
+                        }}
+                      >
+                        {rDiscount && (
+                          <div style={{
+                            position: "absolute", top: 8, left: 8, zIndex: 2,
+                            background: "#ef4444", color: "#fff", fontSize: 10,
+                            fontWeight: 800, padding: "2px 7px", borderRadius: 5,
+                          }}>
+                            {rDiscount}% OFF
+                          </div>
+                        )}
+                        <div style={{
+                          width: "100%", aspectRatio: "1 / 1",
+                          background: "#f9fafb", overflow: "hidden",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {rImg
+                            ? <img src={rImg} alt={rel.name}
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            : <Package size={36} color="#d1d5db" />
+                          }
+                        </div>
+                        <div style={{ padding: "10px 10px 12px", flex: 1,
+                          display: "flex", flexDirection: "column", gap: 4 }}>
+                          {rCat && (
+                            <span style={{ fontSize: 9, fontWeight: 700, color: "#16a34a",
+                              textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                              {rCat}
+                            </span>
+                          )}
+                          <p style={{
+                            margin: 0, fontSize: 12, fontWeight: 700, color: "#1a2332",
+                            lineHeight: 1.35, display: "-webkit-box",
+                            WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+                          }}>
+                            {rel.name}
+                          </p>
+                          <div style={{ display: "flex", alignItems: "center",
+                            gap: 5, marginTop: 2, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: "#16a34a" }}>
+                              ₹{rPrice.toFixed(2)}
+                            </span>
+                            {rOld && rOld > rPrice && (
+                              <span style={{ fontSize: 11, color: "#9ca3af",
+                                textDecoration: "line-through" }}>
+                                ₹{rOld.toFixed(2)}
+                              </span>
+                            )}
+                            {rel.unit && (
+                              <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: "auto" }}>
+                                {rel.unit}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!isLoggedIn()) { navigate("/user/login"); return; }
+                              try {
+                                await addToCart(rel.id, 1);
+                                window.dispatchEvent(new CustomEvent("cart-item-added"));
+                                showToast(`${rel.name} added to cart!`, "success");
+                              } catch {
+                                showToast("Failed to add to cart", "error");
+                              }
+                            }}
+                            style={{
+                              marginTop: 6, width: "100%", padding: "8px 0",
+                              border: "1.5px solid #16a34a", borderRadius: 8,
+                              background: "#fff", color: "#16a34a",
+                              fontSize: 11, fontWeight: 700, cursor: "pointer",
+                              fontFamily: "inherit",
+                              display: "flex", alignItems: "center",
+                              justifyContent: "center", gap: 5,
+                              transition: "background 0.15s, color 0.15s",
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.background = "#16a34a";
+                              e.currentTarget.style.color = "#fff";
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.background = "#fff";
+                              e.currentTarget.style.color = "#16a34a";
+                            }}
+                          >
+                            <ShoppingCart size={12} /> Add to Cart
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
-
-            {/* Image */}
-            <div style={{
-              width: "100%", aspectRatio: "1 / 1",
-              background: "#f9fafb", overflow: "hidden",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              {rImg
-                ? <img src={rImg} alt={rel.name}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                : <Package size={36} color="#d1d5db" />
-              }
-            </div>
-
-            {/* Info */}
-            <div style={{ padding: "10px 10px 12px", flex: 1,
-              display: "flex", flexDirection: "column", gap: 4 }}>
-              {rCat && (
-                <span style={{ fontSize: 9, fontWeight: 700, color: "#16a34a",
-                  textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                  {rCat}
-                </span>
-              )}
-              <p style={{
-                margin: 0, fontSize: 12, fontWeight: 700, color: "#1a2332",
-                lineHeight: 1.35, display: "-webkit-box",
-                WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-              }}>
-                {rel.name}
-              </p>
-              <div style={{ display: "flex", alignItems: "center",
-                gap: 5, marginTop: 2, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 14, fontWeight: 800, color: "#16a34a" }}>
-                  ₹{rPrice.toFixed(2)}
-                </span>
-                {rOld && rOld > rPrice && (
-                  <span style={{ fontSize: 11, color: "#9ca3af",
-                    textDecoration: "line-through" }}>
-                    ₹{rOld.toFixed(2)}
-                  </span>
-                )}
-                {rel.unit && (
-                  <span style={{ fontSize: 10, color: "#9ca3af",
-                    marginLeft: "auto" }}>
-                    {rel.unit}
-                  </span>
-                )}
-              </div>
-
-              {/* Add to Cart button */}
-              <button
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  if (!isLoggedIn()) { navigate("/login"); return; }
-                  try {
-                    await addToCart(rel.id, 1);
-                    window.dispatchEvent(new CustomEvent("cart-item-added"));
-                    showToast(`${rel.name} added to cart!`, "success");
-                  } catch {
-                    showToast("Failed to add to cart", "error");
-                  }
-                }}
-                style={{
-                  marginTop: 6, width: "100%", padding: "8px 0",
-                  border: "1.5px solid #16a34a", borderRadius: 8,
-                  background: "#fff", color: "#16a34a",
-                  fontSize: 11, fontWeight: 700, cursor: "pointer",
-                  fontFamily: "inherit",
-                  display: "flex", alignItems: "center",
-                  justifyContent: "center", gap: 5,
-                  transition: "background 0.15s, color 0.15s",
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = "#16a34a";
-                  e.currentTarget.style.color = "#fff";
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = "#fff";
-                  e.currentTarget.style.color = "#16a34a";
-                }}
-              >
-                <ShoppingCart size={12} /> Add to Cart
-              </button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  </div>
-)}
 
           </div>
         </div>

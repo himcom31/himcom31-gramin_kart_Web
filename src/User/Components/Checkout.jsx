@@ -1,7 +1,8 @@
 // pages/Checkout.jsx
 // ✅ 100% MOBILE RESPONSIVE — everything visible on all screen sizes
+// ✅ Buy Now support — ?buyNow=PRODUCT_ID&qty=N bypasses cart entirely
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   MapPin, ChevronDown, ChevronUp, Tag, Truck,
   CreditCard, Banknote, CheckCircle, ChevronRight,
@@ -23,6 +24,7 @@ const api = {
   razorpayVerify: (body) => fetch(`${API_URL}/api/payment/verify`, { method: "POST", headers: authHdr(), body: JSON.stringify(body) }).then(r => r.json()),
   taxRate: () => fetch(`${API_URL}/api/taxes/active-rate`).then(r => r.json()),
   deliveryRate: (qty) => fetch(`${API_URL}/api/delivery/charge-for-qty?qty=${qty}`).then(r => r.json()),
+  productList: () => fetch(`${API_URL}/api/Products/allFree?limit=500`).then(r => r.json()),
 };
 
 // ─── Spinner ──────────────────────────────────────────────────────────────────
@@ -71,11 +73,9 @@ function AddressModal({ addresses, selectedId, onSelect, onClose }) {
         animation: "ckSlideUp 0.28s cubic-bezier(0.32,0.72,0,1)",
         boxShadow: "0 -8px 40px rgba(0,0,0,0.18)",
       }}>
-        {/* Handle */}
         <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
           <div style={{ width: 40, height: 4, background: "#e5e7eb", borderRadius: 2 }} />
         </div>
-        {/* Header */}
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "8px 18px 14px", borderBottom: "1px solid #f3f4f6", flexShrink: 0
@@ -88,7 +88,6 @@ function AddressModal({ addresses, selectedId, onSelect, onClose }) {
             <X size={15} color="#6b7280" />
           </button>
         </div>
-        {/* List */}
         <div style={{
           padding: "14px 16px 28px", display: "flex", flexDirection: "column",
           gap: 10, overflowY: "auto", flex: 1
@@ -208,12 +207,9 @@ function SummaryRows({ subtotal, couponDiscount, taxableAmount, shippingCharge, 
         valueColor={shippingCharge === 0 ? "#16a34a" : undefined}
       />
 
-      {/* ── Tax rows ── */}
       {taxRate === 0 ? (
-        // No active taxes — show single zero row
         <Row label="Tax" value="₹0.00" />
       ) : taxList.length === 1 ? (
-        // Single tax — show name + % on one row
         <Row
           label={
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -229,7 +225,6 @@ function SummaryRows({ subtotal, couponDiscount, taxableAmount, shippingCharge, 
           value={`₹${tax.toFixed(2)}`}
         />
       ) : (
-        // Multiple taxes — show each component + combined total
         <>
           {taxList.map(t => {
             const amount = parseFloat(((taxableAmount * Number(t.percentage)) / 100).toFixed(2));
@@ -251,7 +246,6 @@ function SummaryRows({ subtotal, couponDiscount, taxableAmount, shippingCharge, 
               />
             );
           })}
-          {/* Combined tax total row */}
           <Row
             label={
               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -277,6 +271,7 @@ function SummaryRows({ subtotal, couponDiscount, taxableAmount, shippingCharge, 
     </div>
   );
 }
+
 // ─── Coupon Input ──────────────────────────────────────────────────────────────
 function CouponSection({ couponApplied, couponCode, setCouponCode, couponError, setCouponError, couponLoading, handleCouponApply, removeCoupon, couponDiscount }) {
   return (
@@ -381,7 +376,7 @@ function OrderSummaryPanel({ summaryRowsProps, couponProps, error, placing, cart
           color: "#6b7280", cursor: "pointer", fontFamily: "inherit",
           display: "flex", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 46
         }}>
-        <ArrowLeft size={14} /> Back to Cart
+        <ArrowLeft size={14} /> Back
       </button>
     </>
   );
@@ -426,6 +421,12 @@ const Skeleton = () => (
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function Checkout() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // ── Buy Now params ─────────────────────────────────────────────────────────
+  const buyNowProductId = searchParams.get("buyNow");
+  const buyNowQty       = parseInt(searchParams.get("qty") || "1", 10);
+  const isBuyNow        = !!buyNowProductId;
 
   const [cartItems, setCartItems] = useState([]);
   const [addresses, setAddresses] = useState([]);
@@ -436,12 +437,10 @@ export default function Checkout() {
   const [note, setNote] = useState("");
   const [showItems, setShowItems] = useState(false);
   const [showAddrModal, setShowAddrModal] = useState(false);
-  const [showMobileSummary, setShowMobileSummary] = useState(false);
 
   const [shippingCharge, setShippingCharge] = useState(0);
   const [taxRate, setTaxRate] = useState(0);
-  const [taxList, setTaxList] = useState([]);   // ← add this
-
+  const [taxList, setTaxList] = useState([]);
   const [deliveryLoading, setDeliveryLoading] = useState(false);
 
   const [couponCode, setCouponCode] = useState("");
@@ -464,16 +463,40 @@ export default function Checkout() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [cartRes, addrRes, gwRes, taxRes] = await Promise.allSettled([
-        api.cart(), api.addresses(), api.gateways(), api.taxRate(),
+      const [addrRes, gwRes, taxRes] = await Promise.allSettled([
+        api.addresses(), api.gateways(), api.taxRate(),
       ]);
+
       let resolvedQty = 1;
-      if (cartRes.status === "fulfilled") {
-        const items = cartRes.value?.items || [];
+
+      // ── Buy Now: fetch single product, skip cart ──────────────────────────
+      if (isBuyNow) {
+        try {
+          const data = await api.productList();
+          const list = Array.isArray(data) ? data : data.products || data.data || [];
+          // loose == handles string vs number id mismatch
+          const found = list.find(p => p.id == buyNowProductId);
+          if (found) {
+            const syntheticItem = { product: found, quantity: buyNowQty };
+            setCartItems([syntheticItem]);
+            resolvedQty = buyNowQty;
+          } else {
+            navigate("/user/product");
+            return;
+          }
+        } catch {
+          navigate("/user/product");
+          return;
+        }
+      } else {
+        // ── Normal checkout: load cart ──────────────────────────────────────
+        const cartRes = await api.cart().catch(() => null);
+        const items = cartRes?.items || [];
         setCartItems(items);
-        if (items.length === 0) navigate("/user/product");
+        if (items.length === 0) { navigate("/user/product"); return; }
         resolvedQty = items.reduce((s, i) => s + (i.quantity || 1), 0);
       }
+
       if (addrRes.status === "fulfilled") {
         const addrs = addrRes.value?.addresses || [];
         setAddresses(addrs);
@@ -483,30 +506,29 @@ export default function Checkout() {
       if (gwRes.status === "fulfilled") setGateways(gwRes.value?.gateways || []);
       if (taxRes.status === "fulfilled" && taxRes.value?.success) {
         setTaxRate(taxRes.value.totalPercentage || 0);
-            setTaxList(taxRes.value.taxes || []);   // ← add this line
-
+        setTaxList(taxRes.value.taxes || []);
       }
+
       try {
         const dRes = await api.deliveryRate(resolvedQty);
         if (dRes?.success) setShippingCharge(Number(dRes.charge ?? 0));
-
       } catch { }
+
     } finally { setLoading(false); }
-  }, [navigate]);
+  }, [navigate, isBuyNow, buyNowProductId, buyNowQty]);
 
   useEffect(() => { load(); }, [load]);
 
+  // ── Re-fetch delivery charge when cart qty changes (normal checkout only) ──
   useEffect(() => {
-    if (cartItems.length === 0) return;
+    if (isBuyNow || cartItems.length === 0) return;
     const qty = cartItems.reduce((s, i) => s + (i.quantity || 1), 0);
     setDeliveryLoading(true);
     api.deliveryRate(qty)
-      .then(res => {
-        if (res?.success) setShippingCharge(Number(res.charge ?? 0));
-      })
+      .then(res => { if (res?.success) setShippingCharge(Number(res.charge ?? 0)); })
       .catch(() => { })
       .finally(() => setDeliveryLoading(false));
-  }, [cartItems]);
+  }, [cartItems, isBuyNow]);
 
   // ── Derived pricing ────────────────────────────────────────────────────────
   const subtotal = cartItems.reduce((s, i) => {
@@ -542,6 +564,12 @@ export default function Checkout() {
   const handlePlaceOrder = async () => {
     if (!selectedAddressId) { setError("Please select a delivery address"); return; }
     setError(""); setPlacing(true);
+
+    // Build extra payload for buy now
+    const buyNowPayload = isBuyNow
+      ? { buyNow: true, productId: buyNowProductId, quantity: buyNowQty }
+      : {};
+
     try {
       if (paymentMethod === "Razorpay") {
         const rzpData = await api.razorpayInit({ amount: total });
@@ -559,12 +587,16 @@ export default function Checkout() {
             const orderRes = await api.placeOrder({
               addressId: selectedAddressId, paymentMethod: "Razorpay", note,
               couponCode: couponApplied?.couponCode || null, couponDiscount, shippingCharge, tax,
-              razorpayOrderId: response.razorpay_order_id, razorpayPaymentId: response.razorpay_payment_id,
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              ...buyNowPayload,
             });
             if (orderRes.success) {
-              window.dispatchEvent(new CustomEvent("cart-updated", { detail: { items: [] } }));
-                  setOrderSuccess({ ...orderRes.order, total, paymentMethod }); // ← merge frontend total
-
+              // Only clear cart event when this was a real cart checkout
+              if (!isBuyNow) {
+                window.dispatchEvent(new CustomEvent("cart-updated", { detail: { items: [] } }));
+              }
+              setOrderSuccess({ ...orderRes.order, total, paymentMethod });
             } else { setError(orderRes.message || "Order failed"); }
             setPlacing(false);
           },
@@ -576,11 +608,13 @@ export default function Checkout() {
           addressId: selectedAddressId,
           paymentMethod: paymentMethod === "Card" ? "Card" : "COD",
           note, couponCode: couponApplied?.couponCode || null, couponDiscount, shippingCharge, tax,
+          ...buyNowPayload,
         });
         if (orderRes.success) {
-          window.dispatchEvent(new CustomEvent("cart-updated", { detail: { items: [] } }));
-              setOrderSuccess({ ...orderRes.order, total, paymentMethod }); // ← same fix
-
+          if (!isBuyNow) {
+            window.dispatchEvent(new CustomEvent("cart-updated", { detail: { items: [] } }));
+          }
+          setOrderSuccess({ ...orderRes.order, total, paymentMethod });
         } else { setError(orderRes.message || "Failed to place order"); }
         setPlacing(false);
       }
@@ -592,10 +626,9 @@ export default function Checkout() {
   }
 
   // ── Shared props ────────────────────────────────────────────────────────────
-  const summaryRowsProps = { subtotal, couponDiscount, taxableAmount, shippingCharge, deliveryLoading, taxRate, tax,taxList, total };
+  const summaryRowsProps = { subtotal, couponDiscount, taxableAmount, shippingCharge, deliveryLoading, taxRate, tax, taxList, total };
   const couponProps = { couponApplied, couponCode, setCouponCode, couponError, setCouponError, couponLoading, handleCouponApply, removeCoupon, couponDiscount };
 
-  // ── Card style ──────────────────────────────────────────────────────────────
   const card = {
     background: "#fff", borderRadius: 16, padding: isMobile ? "16px 14px" : "22px",
     marginBottom: 14, boxShadow: "0 2px 14px rgba(0,0,0,0.06)",
@@ -615,9 +648,6 @@ export default function Checkout() {
           box-shadow: 0 0 0 3px rgba(22,163,74,0.12);
           outline: none;
         }
-        /* Hide scrollbar on mobile summary */
-        .ck-summary-scroll::-webkit-scrollbar { display: none; }
-        .ck-summary-scroll { scrollbar-width: none; }
       `}</style>
 
       {/* ── Top breadcrumb bar ── */}
@@ -627,14 +657,13 @@ export default function Checkout() {
           padding: isMobile ? "10px 14px" : "10px 20px",
           display: "flex", alignItems: "center", gap: 8,
         }}>
-          {/* Back button always visible on mobile */}
           <button onClick={() => navigate(-1)} style={{
             display: "flex", alignItems: "center", gap: 6,
             background: "none", border: "none", cursor: "pointer",
             color: "#16a34a", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
             padding: "6px 0", minHeight: 36,
           }}>
-            <ArrowLeft size={15} /> {isMobile ? "Cart" : "Back to Cart"}
+            <ArrowLeft size={15} /> {isMobile ? "Back" : "Back"}
           </button>
           {!isMobile && <>
             <ChevronRight size={13} color="#9ca3af" />
@@ -654,7 +683,9 @@ export default function Checkout() {
 
         {/* ── Page title ── */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
-          <h1 style={{ margin: 0, fontSize: isMobile ? 20 : 26, fontWeight: 800, color: "#1a2332" }}>Checkout</h1>
+          <h1 style={{ margin: 0, fontSize: isMobile ? 20 : 26, fontWeight: 800, color: "#1a2332" }}>
+            {isBuyNow ? "Buy Now" : "Checkout"}
+          </h1>
           {!loading && (
             <button onClick={() => setShowItems(p => !p)} style={{
               display: "flex", alignItems: "center", gap: 6, background: "#f0fdf4",
@@ -829,7 +860,7 @@ export default function Checkout() {
                 />
               </div>
 
-              {/* ── Mobile: Order Summary inline (above bottom bar) ── */}
+              {/* ── Mobile: Order Summary inline ── */}
               {isMobile && (
                 <div style={card}>
                   <h2 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 800, color: "#1a2332" }}>
@@ -882,7 +913,6 @@ export default function Checkout() {
           boxShadow: "0 -4px 24px rgba(0,0,0,0.10)",
           paddingBottom: "env(safe-area-inset-bottom,0px)",
         }}>
-          {/* Single row: total on left, Place Order on right */}
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
             padding: "12px 14px", gap: 12,
@@ -914,7 +944,6 @@ export default function Checkout() {
             </button>
           </div>
 
-          {/* No address warning */}
           {!selectedAddressId && (
             <div style={{
               padding: "0 14px 10px", display: "flex", alignItems: "center", gap: 6,
