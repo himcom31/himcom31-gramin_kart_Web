@@ -411,8 +411,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onStatu
     setInvoiceLoading(true);
     try {
       const token = localStorage.getItem("adminToken");
-      const res = await fetch(`http://localhost:5000/api/invoice/${order.id}/invoice?download=1`, {
-        headers: { Authorization: `Bearer ${token}` },
+const res = await fetch(`${API_URL}/api/invoice/${order.id}/invoice?download=1`, {
+
+      headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error("Failed");
       const blob = await res.blob();
@@ -433,8 +434,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onStatu
     setReceiptLoading(true);
     try {
       const token = localStorage.getItem("adminToken");
-      const res = await fetch(`http://localhost:5000/api/receipt/${order.id}/receipt?download=1`, {
-        headers: { Authorization: `Bearer ${token}` },
+const res = await fetch(`${API_URL}/api/receipt/${order.id}/receipt?download=1`, {
+
+      headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error("Failed");
       const blob = await res.blob();
